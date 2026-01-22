@@ -239,6 +239,7 @@ async function initializePlatform() {
   // Maintenance tasks
   setupMaintenanceTasks()
   setupConnectionMonitor()
+  setupKeepAlive()
 
   isInitialized = true
   logger.info("═══════════════════════════════════════════════")
@@ -317,6 +318,25 @@ function setupConnectionMonitor() {
       // Silently ignore monitor errors
     }
   }, 30000) // 30 seconds
+}
+// Internal Keep-Alive - Prevents shutdown by pinging itself
+function setupKeepAlive() {
+  const PING_INTERVAL = 1 * 60 * 1000 // 1 minutes
+  
+  setInterval(async () => {
+    try {
+      const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`
+      
+      await fetch(`${url}/health`)
+        .then(res => res.json())
+        .then(() => logger.info("✅ Keep-alive ping successful"))
+        .catch(() => {}) // Silent fail
+    } catch (error) {
+      // Silent fail
+    }
+  }, PING_INTERVAL)
+  
+  logger.info("⏰ Keep-alive cron job started (pings every 10 minutes)")
 }
 
 // Graceful shutdown - never throws
