@@ -1,0 +1,68 @@
+// Utils module barrel export
+export * from './jid.js'
+export { handlePairing } from './pairing.js'
+export * from './validators.js'
+export * from './formatters.js'
+export * from './helpers.js'
+export { AntiDeletedHandler } from './deleted-handler.js'
+export { ViewOnceHandler } from './viewonce-handler.js'
+// Presence management
+export {
+  PresenceManager,
+  getPresenceManager,
+  initializePresenceForSession,
+  handlePresenceBeforeSend,
+  handlePresenceAfterSend,
+  handlePresenceOnReceive
+} from './presence-manager.js'
+
+export {
+  ConnectionHealthMonitor,
+  getHealthMonitor,
+  recordSessionActivity
+} from './connection-health.js'
+
+export {
+  analyzeMessage,
+  isSpamMessage
+} from './virtex-protection.js'
+
+// Status handling
+export {
+  StatusHandler,
+  getStatusHandler,
+  handleStatusMessage
+} from './status-handler.js'
+
+export {
+  invalidateSessionLookupCache
+} from './session-lookup.js'
+
+export { getMessageDeduplicator } from './message-duplicator.js'
+// Re-export commonly used functions
+export {
+  extractPhoneNumber,
+  normalizeJid,
+  isSameJid,
+  formatJid,
+  isGroupJid,
+  isUserJid,
+  isLid,
+  createJidFromPhone,
+  parseJid,
+  getDisplayId,
+  normalizeJids,
+  createRateLimitKey
+} from './jid.js'
+
+export {
+  validatePhoneNumber,
+  validateJid,
+  validateGroupJid
+} from './validators.js'
+
+export {
+  formatTimestamp,
+  formatFileSize,
+  formatDuration
+} from './formatters.js'
