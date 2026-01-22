@@ -2,8 +2,9 @@ services:
   - type: web
     name: whatsapp-bot
     runtime: node
+    plan: free
     buildCommand: npm install
-    startCommand: npm run start
+    startCommand: node index.js
     
     envVars:
       - key: DATABASE_URL
@@ -15,4 +16,4 @@ services:
 
 databases:
   - name: whatsapp-db
-    plan: starter
+    plan: free
