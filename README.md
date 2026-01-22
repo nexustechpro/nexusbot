@@ -10,13 +10,13 @@
 
 ---
 
-[![Author](https://img.shields.io/badge/Author-NEXUS%20TECH-purple?style=for-the-badge&logo=github)](https://github.com/Adexx-11234/nexus-bot-panel)
+[![Author](https://img.shields.io/badge/Author-NEXUS%20TECH-purple?style=for-the-badge&logo=github)](https://github.com/nexustechpro/nexusbot)
 [![WhatsApp Channel](https://img.shields.io/badge/CHANNEL-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://whatsapp.com/channel/YOUR_CHANNEL)
 [![Telegram Bot](https://img.shields.io/badge/TELEGRAM%20BOT-0088cc?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/YOUR_BOT)
 
-[![Stars](https://img.shields.io/github/stars/Adexx-11234/nexus-bot-panel?style=social)](https://github.com/Adexx-11234/nexus-bot-panel/stargazers)
-[![Forks](https://img.shields.io/github/forks/Adexx-11234/nexus-bot-panel?style=social)](https://github.com/Adexx-11234/nexus-bot-panel/network/members)
-[![Watchers](https://img.shields.io/github/watchers/Adexx-11234/nexus-bot-panel?label=Watchers&style=social)](https://github.com/Adexx-11234/nexus-bot-panel/watchers)
+[![Stars](https://img.shields.io/github/stars/nexustechpro/nexusbot?style=social)](https://github.com/nexustechpro/nexusbot/stargazers)
+[![Forks](https://img.shields.io/github/forks/nexustechpro/nexusbot?style=social)](https://github.com/nexustechpro/nexusbot/network/members)
+[![Watchers](https://img.shields.io/github/watchers/nexustechpro/nexusbot?label=Watchers&style=social)](https://github.com/nexustechpro/nexusbot/watchers)
 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
@@ -46,11 +46,11 @@
 
 | Platform | Deploy Link |
 |:--------:|:-----------:|
-| **Heroku** | [![Deploy](https://img.shields.io/badge/Deploy-Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white)](https://dashboard.heroku.com/new?template=https://github.com/Adexx-11234/nexus-bot-panel) |
-| **Render** | [![Deploy](https://img.shields.io/badge/Deploy-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://render.com/deploy?repo=https://github.com/Adexx-11234/nexus-bot-panel) |
-| **Koyeb** | [![Deploy](https://img.shields.io/badge/Deploy-Koyeb-121212?style=for-the-badge&logo=koyeb&logoColor=white)](https://app.koyeb.com/deploy?type=git&repository=github.com/Adexx-11234/nexus-bot-panel) |
-| **Railway** | [![Deploy](https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/new/template?template=https://github.com/Adexx-11234/nexus-bot-panel) |
-| **Replit** | [![Run](https://img.shields.io/badge/Run-Replit-F26207?style=for-the-badge&logo=replit&logoColor=white)](https://replit.com/github/Adexx-11234/nexus-bot-panel) |
+| **Heroku** | [![Deploy](https://img.shields.io/badge/Deploy-Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white)](https://dashboard.heroku.com/new?template=https://github.com/nexustechpro/nexusbot) |
+| **Render** | [![Deploy](https://img.shields.io/badge/Deploy-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://render.com/deploy?repo=https://github.com/nexustechpro/nexusbot) |
+| **Koyeb** | [![Deploy](https://img.shields.io/badge/Deploy-Koyeb-121212?style=for-the-badge&logo=koyeb&logoColor=white)](https://app.koyeb.com/deploy?type=git&repository=github.com/nexustechpro/nexusbot) |
+| **Railway** | [![Deploy](https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/new/template?template=https://github.com/nexustechpro/nexusbot) |
+| **Replit** | [![Run](https://img.shields.io/badge/Run-Replit-F26207?style=for-the-badge&logo=replit&logoColor=white)](https://replit.com/github/nexustechpro/nexusbot) |
 
 </div>
 
@@ -400,7 +400,7 @@ nexusbot/
 
 ```bash
 # Clone the repository
-git clone https://github.com/Adexx-11234/nexus-bot-panel.git
+git clone https://github.com/nexustechpro/nexusbot.git
 
 # Navigate to directory
 cd nexus-bot-panel
@@ -499,7 +499,7 @@ We welcome contributions! Here's how:
 
 [![WhatsApp Channel](https://img.shields.io/badge/WhatsApp%20Channel-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://whatsapp.com/channel/YOUR_CHANNEL)
 [![Telegram Group](https://img.shields.io/badge/Telegram%20Support-0088cc?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/YOUR_SUPPORT_GROUP)
-[![GitHub Issues](https://img.shields.io/badge/GitHub%20Issues-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Adexx-11234/nexus-bot-panel/issues)
+[![GitHub Issues](https://img.shields.io/badge/GitHub%20Issues-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/nexustechpro/nexusbot/issues)
 
 </div>
 
