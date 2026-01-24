@@ -41,7 +41,7 @@ export async function handlePairing(sock, sessionId, phoneNumber, pairingState, 
       createdAt: Date.now()
     })
 
-    logger.info(`Pairing code generated for ${sessionId}: ${formattedCode}`)
+    logger.message(`Pairing code generated for ${sessionId}: ${formattedCode}`)
 
     // Invoke callback
     if (callbacks?.onPairingCode) {
