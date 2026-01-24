@@ -152,7 +152,7 @@ export class MongoDBStorage {
       this.isConnecting = false
       this.reconnectAttempts++
 
-      logger.error(`MongoDB connection failed: ${error.message}`)
+      //logger.error(`MongoDB connection failed: ${error.message}`)
 
       if (this.client) {
         try {
