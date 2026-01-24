@@ -14,8 +14,8 @@
     "multi-user"
   ],
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node main.js",
+    "dev": "nodemon main.js",
     "migrate": "node database/migrations/run-migrations.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
