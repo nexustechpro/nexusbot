@@ -266,7 +266,7 @@ export default {
 ```
 nexusbot/
 │
-├── 📄 index.js                      # Main entry point
+├── 📄 main.js                      # Main entry point
 ├── 📄 package.json                  # Dependencies
 ├── 📄 README.md                     # Documentation
 │
@@ -426,7 +426,7 @@ npm start
 npm install -g pm2
 
 # Start with PM2
-pm2 start index.js --name nexusbot
+pm2 start main.js --name nexusbot
 
 # Auto-restart on reboot
 pm2 startup
