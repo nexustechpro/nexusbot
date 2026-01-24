@@ -1,0 +1,19 @@
+services:
+  whatsapp-bot:
+    type: web
+    build:
+      buildpack: nodejs
+    instance_type: free
+    ports:
+      - port: 3000
+        protocol: http
+    env:
+      - name: DATABASE_URL
+        secret: DATABASE_URL
+      - name: WHATSAPP_PHONE_NUMBER
+        secret: WHATSAPP_PHONE_NUMBER
+    regions:
+      - fra
+    scaling:
+      min: 1
+      max: 1

@@ -56,6 +56,7 @@ import express from "express"
 import cookieParser from 'cookie-parser'
 import { createComponentLogger } from "./utils/logger.js"
 import { getPhoneNumber, formatPhoneForDisplay } from "./utils/phone-input.js"
+import { getDatabaseUrl, formatDatabaseForLogging } from "./utils/database-input.js"
 import { testConnection, closePool } from "./config/database.js"
 import { runMigrations } from "./database/migrations/run-migrations.js"
 import { quickSetup as quickSetupWhatsApp} from "./whatsapp/index.js"
@@ -127,9 +128,26 @@ async function initializePlatform() {
   logger.info("🚀 Starting Platform Initialization")
   logger.info("═══════════════════════════════════════════════")
   
-  // 0. Get Phone Number (if needed)
+  // 0. Get Database URL (if needed)
+  logger.info("🗄️  [0/9] Checking database configuration...")
+  try {
+    const databaseUrl = await getDatabaseUrl()
+    if (databaseUrl) {
+      logger.info(`✅ Database URL configured: ${formatDatabaseForLogging(databaseUrl)}`)
+      process.env.DATABASE_URL = databaseUrl
+    } else {
+      logger.warn("⚠️  No database URL configured - sessions may not persist")
+      logger.warn("   Consider setting up a free PostgreSQL database:")
+      logger.warn("   https://github.com/nexustechpro/nexusbot#database-setup")
+    }
+  } catch (error) {
+    logger.error("❌ Database URL configuration failed - continuing anyway")
+    logger.error(error.message)
+  }
+  
+  // 1. Get Phone Number (if needed)
   let phoneNumber = null
-  logger.info("📱 [0/9] Checking phone number configuration...")
+  logger.info("📱 [1/9] Checking phone number configuration...")
   try {
     phoneNumber = await getPhoneNumber()
     if (phoneNumber) {
@@ -143,8 +161,8 @@ async function initializePlatform() {
     logger.error(error.message)
   }
   
-  // 1. Database Connection
-  logger.info("📊 [1/9] Connecting to database...")
+  // 2. Database Connection
+  logger.info("📊 [2/9] Connecting to database...")
   try {
     await testConnection()
     // Warmup connection pool
@@ -158,18 +176,18 @@ async function initializePlatform() {
     logger.error(error.message)
   }
 
-  // 2. Database Migrations
-  logger.info("🔄 [2/9] Running database migrations...")
+  // 3. Database Migrations
+  logger.info("🔄 [3/9] Running database migrations...")
   try {
      await runMigrations()
-    logger.info("⏭️  Migrations skipped Done")
+    logger.info("✅ Migrations completed")
   } catch (error) {
     logger.error("❌ Migration failed - continuing anyway")
     logger.error(error.message)
   }
 
-  // 3. Plugin Loading
-  logger.info("🔌 [3/9] Loading plugins...")
+  // 4. Plugin Loading
+  logger.info("🔌 [4/9] Loading plugins...")
   try {
     await pluginLoader.loadPlugins()
     logger.info("✅ Plugins loaded successfully")
@@ -190,7 +208,7 @@ async function initializePlatform() {
   }
 
   // Wait for WhatsApp to stabilize
-  logger.info("⏳ Waiting 10s for WhatsApp sessions to stabilize...")
+  logger.info("⏳ [6/9] Waiting 10s for WhatsApp sessions to stabilize...")
   await new Promise(resolve => setTimeout(resolve, 10000))
 
   // 7. Group Scheduler
@@ -209,7 +227,7 @@ async function initializePlatform() {
   }
 
   // Wait for final stabilization
-  logger.info("⏳ Waiting 10s for final stabilization...")
+  logger.info("⏳ [8/9] Waiting 10s for final stabilization...")
   await new Promise(resolve => setTimeout(resolve, 10000))
 
   // 8. Database verification

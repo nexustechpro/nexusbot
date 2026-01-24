@@ -1,7 +1,7 @@
 /**
- * Database URL Input Utility
- * Handles database URL input from environment variables or command line
- * Supports PostgreSQL connection strings
+ * Phone Number Input Utility
+ * Handles phone number input from environment variables or command line
+ * Supports multiple formats: +2348012345678, 234 801 234 5678, 0801-234-5678, etc.
  */
 
 import readline from 'readline'
@@ -10,14 +10,13 @@ import path from 'path'
 import { createComponentLogger } from './logger.js'
 import dotenv from 'dotenv'
 dotenv.config()
-
-const logger = createComponentLogger('DATABASE_INPUT')
+const logger = createComponentLogger('PHONE_INPUT')
 
 /**
- * Save database URL to .env file
- * @param {string} databaseUrl - Database URL to save
+ * Save phone number to .env file
+ * @param {string} phoneNumber - Phone number to save (with country code)
  */
-export function saveDatabaseToEnv(databaseUrl) {
+export function savePhoneToEnv(phoneNumber) {
   try {
     const envPath = path.join(process.cwd(), '.env')
     let envContent = ''
@@ -27,74 +26,64 @@ export function saveDatabaseToEnv(databaseUrl) {
       envContent = fs.readFileSync(envPath, 'utf-8')
     }
     
-    // Check if DATABASE_URL already exists
-    const dbRegex = /^DATABASE_URL=.*$/m
+    // Check if WHATSAPP_PHONE_NUMBER already exists
+    const phoneRegex = /^WHATSAPP_PHONE_NUMBER=.*$/m
     
-    if (dbRegex.test(envContent)) {
+    if (phoneRegex.test(envContent)) {
       // Replace existing value
-      envContent = envContent.replace(dbRegex, `DATABASE_URL=${databaseUrl}`)
+      envContent = envContent.replace(phoneRegex, `WHATSAPP_PHONE_NUMBER=${phoneNumber}`)
     } else {
       // Add new line
       if (envContent && !envContent.endsWith('\n')) {
         envContent += '\n'
       }
-      envContent += `DATABASE_URL=${databaseUrl}\n`
+      envContent += `WHATSAPP_PHONE_NUMBER=${phoneNumber}\n`
     }
     
     // Write back to .env
     fs.writeFileSync(envPath, envContent, 'utf-8')
-    logger.info(`✅ Database URL saved to .env file`)
+    logger.info(`✅ Phone number saved to .env file`)
   } catch (error) {
-    logger.warn(`⚠️  Could not save database URL to .env: ${error.message}`)
+    logger.warn(`⚠️  Could not save phone number to .env: ${error.message}`)
   }
 }
 
 /**
- * Get database URL from environment or prompt user
- * @returns {Promise<string|null>} Database URL or null if not needed
+ * Get phone number from environment or prompt user
+ * @returns {Promise<string>} Cleaned phone number (digits only, no +)
  */
-export async function getDatabaseUrl() {
-  // Check if database URL is in environment
-  const envDatabase = process.env.DATABASE_URL
+export async function getPhoneNumber() {
+  // Check if phone number is in environment
+  const envPhone = process.env.WHATSAPP_PHONE_NUMBER
   
-  if (envDatabase) {
-    if (isValidDatabaseUrl(envDatabase)) {
-      logger.info(`🗄️  Database URL loaded from DATABASE_URL env variable`)
-      return envDatabase
-    } else {
-      logger.warn(`⚠️  Invalid DATABASE_URL in environment, will prompt for new one`)
-    }
+  if (envPhone) {
+    logger.info(`📱 Phone number loaded from WHATSAPP_PHONE_NUMBER env variable`)
+    return sanitizePhoneNumber(envPhone)
   }
 
-  // Check for database from command line argument
-  const dbArg = process.argv.find(arg => arg.startsWith('--database='))
-  if (dbArg) {
-    const dbUrl = dbArg.replace('--database=', '')
-    if (isValidDatabaseUrl(dbUrl)) {
-      logger.info(`🗄️  Database URL provided via command line argument`)
-      return dbUrl
-    } else {
-      logger.warn(`⚠️  Invalid database URL provided via --database argument`)
-    }
+  // Check for phone from command line argument
+  const phoneArg = process.argv.find(arg => arg.startsWith('--phone='))
+  if (phoneArg) {
+    const phone = phoneArg.replace('--phone=', '')
+    logger.info(`📱 Phone number provided via command line argument`)
+    return sanitizePhoneNumber(phone)
   }
 
   // Prompt user if running in interactive mode
   if (process.stdin.isTTY) {
-    return await promptDatabaseUrl()
+    return await promptPhoneNumber()
   }
 
-  // If not interactive and no database provided
-  logger.error('❌ No valid database URL provided.')
-  logger.error('   Set DATABASE_URL environment variable or use --database=<url>')
-  logger.error('   See: https://github.com/nexustechpro/nexusbot#database-setup')
+  // If not interactive and no phone provided
+  logger.warn('⚠️  No phone number provided. Set WHATSAPP_PHONE_NUMBER or use --phone=<number>')
   return null
 }
 
 /**
- * Prompt user for database URL in interactive mode
- * @returns {Promise<string|null>}
+ * Prompt user for phone number in interactive mode
+ * @returns {Promise<string>}
  */
-export async function promptDatabaseUrl() {
+export async function promptPhoneNumber() {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin,
@@ -102,71 +91,43 @@ export async function promptDatabaseUrl() {
     })
 
     console.log('\n' + '='.repeat(70))
-    console.log('🗄️  Database Configuration')
+    console.log('📱 WhatsApp Session Initialization')
     console.log('='.repeat(70))
     
-    console.log('\n📝 Nexus Bot requires a PostgreSQL database to store session data.')
-    console.log('   You can get a FREE database from Render.com\n')
+    console.log('\n✅ RECOMMENDED FORMAT (most common):')
+    console.log('   2348012345678  (for Nigeria)')
+    console.log('   2338123456789  (for Ghana)')
     
-    console.log('✅ How to get a FREE database:')
-    console.log('   1. Go to https://render.com')
-    console.log('   2. Sign up with Google')
-    console.log('   3. Click "New +" → "PostgreSQL"')
-    console.log('   4. Name: nexus-database')
-    console.log('   5. Plan: Select "Free"')
-    console.log('   6. Click "Create Database"')
-    console.log('   7. Copy "External Database URL"\n')
+    console.log('\n✨ We also accept these formats:')
+    console.log('   +2348012345678')
+    console.log('   +234 801 234 5678')
+    console.log('   234-801-234-5678')
+    console.log('   (234) 801-234-5678')
+    console.log('   234 801 234 5678')
+    console.log('   08012345678     (with leading 0)')
     
-    console.log('📋 Your database URL should look like this:')
-    console.log('   postgresql://user:password@host.render.com/database\n')
-    
-    console.log('💡 Tip: You can also set DATABASE_URL in your .env file')
-    console.log('   or use --database=<url> when starting the bot\n')
+    console.log('\n🌍 Common country codes:')
+    console.log('   Nigeria: 234 | Ghana: 233 | Kenya: 254 | USA: 1 | UK: 44 | India: 91')
     
     rl.question(
-      'Enter your PostgreSQL database URL (or press Enter to skip):\n> ',
-      (dbUrl) => {
+      '\nEnter your WhatsApp phone number:\n> ',
+      (phone) => {
         rl.close()
+        const sanitized = sanitizePhoneNumber(phone)
         
-        // Allow empty input to skip
-        if (!dbUrl || dbUrl.trim() === '') {
-          console.log('\n⚠️  Skipping database setup.')
-          console.log('   Note: Bot may not persist session without a database.\n')
-          resolve(null)
-          return
-        }
-        
-        const trimmed = dbUrl.trim()
-        
-        if (isValidDatabaseUrl(trimmed)) {
-          logger.info(`✅ Database URL accepted`)
+        if (sanitized) {
+          logger.info(`✅ Phone number accepted: +${sanitized}`)
           
           // Save to .env file
-          saveDatabaseToEnv(trimmed)
+          savePhoneToEnv(sanitized)
           
-          console.log(`\n✅ Database URL saved to .env file`)
-          console.log(`   Your session will be stored securely in PostgreSQL\n`)
-          resolve(trimmed)
+          console.log(`\n✅ You will soon receive a pairing code via WhatsApp`)
+          console.log(`   Watch your browser/terminal for the code prompt\n`)
+          resolve(sanitized)
         } else {
-          logger.error('❌ Invalid database URL format')
-          console.log('\n❌ Database URL must start with "postgresql://"')
-          console.log('   Example: postgresql://user:pass@host.render.com/db\n')
-          
-          // Ask if they want to try again
-          const retry = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout
-          })
-          
-          retry.question('Try again? (y/n): ', (answer) => {
-            retry.close()
-            if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
-              resolve(promptDatabaseUrl()) // Recursively prompt again
-            } else {
-              console.log('\n⚠️  Continuing without database...\n')
-              resolve(null)
-            }
-          })
+          logger.error('❌ Invalid phone number format')
+          console.log('\n❌ Phone number must be 10-15 digits\n')
+          resolve(promptPhoneNumber()) // Recursively prompt again
         }
       }
     )
@@ -174,58 +135,94 @@ export async function promptDatabaseUrl() {
 }
 
 /**
- * Validate database URL format
- * @param {string} url - Database URL to validate
- * @returns {boolean}
+ * Sanitize and validate phone number
+ * Supports multiple formats and converts to clean digits only
+ * @param {string} phone - Raw phone number input (any format)
+ * @returns {string|null} Cleaned phone number (digits only) or null if invalid
  */
-export function isValidDatabaseUrl(url) {
-  if (!url || typeof url !== 'string') return false
-  
-  // Must start with postgresql:// or postgres://
-  if (!url.startsWith('postgresql://') && !url.startsWith('postgres://')) {
-    return false
-  }
-  
-  // Basic structure validation: protocol://user:pass@host/database
-  const pattern = /^postgres(ql)?:\/\/[^:]+:[^@]+@[^/]+\/[^\s]+$/
-  return pattern.test(url)
-}
+export function sanitizePhoneNumber(phone) {
+  if (!phone) return null
 
-/**
- * Extract database info from URL for logging (hides password)
- * @param {string} url - Database URL
- * @returns {object} Database info
- */
-export function getDatabaseInfo(url) {
-  if (!isValidDatabaseUrl(url)) return null
-  
-  try {
-    const parsed = new URL(url)
-    return {
-      protocol: parsed.protocol.replace(':', ''),
-      username: parsed.username,
-      host: parsed.hostname,
-      port: parsed.port || '5432',
-      database: parsed.pathname.replace('/', ''),
-      hasPassword: !!parsed.password
-    }
-  } catch (error) {
+  // Convert to string and remove all non-digit characters except +
+  let cleaned = phone.toString().replace(/[\s\-\(\)\.]/g, '')
+
+  // Handle leading 0 (replace with country code if not already present)
+  // First, check if it starts with 0
+  if (cleaned.startsWith('0')) {
+    // If it's just starting with 0 and not +0, assume it's local format
+    // We'll keep it for now - user should provide country code
+    cleaned = cleaned.substring(1) // Remove leading 0
+  }
+
+  // Remove + prefix if present
+  if (cleaned.startsWith('+')) {
+    cleaned = cleaned.substring(1)
+  }
+
+  // Must be 10-15 digits and contain only numbers
+  if (!/^\d{10,15}$/.test(cleaned)) {
     return null
   }
+
+  return cleaned
 }
 
 /**
- * Format database URL for safe logging (hides password)
- * @param {string} url - Database URL
- * @returns {string} Safe URL for logging
+ * Validate phone number format
+ * @param {string} phone - Phone number to validate (any format)
+ * @returns {boolean}
  */
-export function formatDatabaseForLogging(url) {
-  if (!isValidDatabaseUrl(url)) return 'Invalid URL'
-  
-  try {
-    const parsed = new URL(url)
-    return `${parsed.protocol}//${parsed.username}:****@${parsed.host}${parsed.pathname}`
-  } catch (error) {
-    return 'Error parsing URL'
+export function isValidPhoneNumber(phone) {
+  return sanitizePhoneNumber(phone) !== null
+}
+
+/**
+ * Format phone number for display
+ * @param {string} phone - Phone number (any format)
+ * @returns {string} Formatted phone number with +
+ */
+export function formatPhoneForDisplay(phone) {
+  const clean = sanitizePhoneNumber(phone)
+  return clean ? `+${clean}` : phone
+}
+
+/**
+ * Get country code from phone number
+ * @param {string} phone - Phone number
+ * @returns {string|null} Country code or null
+ */
+export function getCountryCode(phone) {
+  const clean = sanitizePhoneNumber(phone)
+  if (!clean) return null
+
+  // Map of common country codes and their phone number lengths
+  const countryPatterns = {
+    '234': 13, // Nigeria: 234 + 10 digits
+    '233': 12, // Ghana: 233 + 9 digits
+    '254': 12, // Kenya: 254 + 9 digits
+    '27': 12,  // South Africa: 27 + 9 digits
+    '1': 11,   // USA: 1 + 10 digits
+    '44': 13,  // UK: 44 + 11 digits
+    '91': 12,  // India: 91 + 10 digits
+    '353': 13, // Ireland: 353 + 9 digits
+    '33': 12,  // France: 33 + 9 digits
+    '49': 13,  // Germany: 49 + 10 digits
   }
+
+  for (const [code, length] of Object.entries(countryPatterns)) {
+    if (clean.startsWith(code) && clean.length === length) {
+      return code
+    }
+  }
+
+  // Try to guess from length patterns
+  if (clean.length === 13 && (clean.startsWith('234') || clean.startsWith('27') || clean.startsWith('44'))) {
+    return clean.substring(0, 3)
+  }
+  if (clean.length === 12 && (clean.startsWith('233') || clean.startsWith('254') || clean.startsWith('91'))) {
+    return clean.substring(0, 3)
+  }
+
+  // Default to first 1-3 characters as code
+  return clean.substring(0, 3)
 }

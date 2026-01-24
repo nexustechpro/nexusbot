@@ -1,0 +1,23 @@
+app = "whatsapp-bot"
+
+[build]
+  builder = "heroku/buildpacks:20"
+
+[env]
+  PORT = "3000"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+[[services.tcp_checks]]
+  interval = "10s"
+  timeout = "2s"
