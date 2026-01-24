@@ -29,9 +29,21 @@ const circuitBreaker = {
 };
 
 if (!USE_SQLITE) {
+    let sslConfig;
+  
+  // Auto-detect SSL requirement
+  try {
+    const sslResult = await tryConnectWithSSL();
+    sslConfig = sslResult.ssl;
+  } catch (error) {
+    logger.error('Failed to detect SSL configuration:', error.message);
+    // Default to SSL for safety
+    sslConfig = { rejectUnauthorized: false };
+  }
+
   const dbConfig = {
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    ssl: sslConfig,
     max: 50,
     min: 5,
     idleTimeoutMillis: 30000,
@@ -82,6 +94,53 @@ if (USE_SQLITE) {
 }
 
 // ==================== Unified Query Interface ====================
+
+
+/**
+ * Try connecting with different SSL configurations
+ */
+async function tryConnectWithSSL() {
+  const connectionString = process.env.DATABASE_URL;
+  
+  // Try SSL first (most cloud providers require it)
+  try {
+    const poolWithSSL = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
+    });
+    
+    const client = await poolWithSSL.connect();
+    await client.query('SELECT 1');
+    client.release();
+    await poolWithSSL.end();
+    
+    logger.info('✅ SSL connection successful');
+    return { ssl: { rejectUnauthorized: false } };
+  } catch (sslError) {
+    logger.debug('SSL connection failed, trying without SSL...');
+    
+    // Try without SSL (local databases)
+    try {
+      const poolNoSSL = new Pool({
+        connectionString,
+        ssl: false,
+        connectionTimeoutMillis: 5000,
+      });
+      
+      const client = await poolNoSSL.connect();
+      await client.query('SELECT 1');
+      client.release();
+      await poolNoSSL.end();
+      
+      logger.info('✅ Non-SSL connection successful');
+      return { ssl: false };
+    } catch (noSslError) {
+      logger.error('❌ Both SSL and non-SSL connections failed');
+      throw new Error(`Database connection failed: SSL error: ${sslError.message}, Non-SSL error: ${noSslError.message}`);
+    }
+  }
+}
 
 /**
  * Convert PostgreSQL parameterized query ($1, $2) to SQLite (?, ?)

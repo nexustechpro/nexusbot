@@ -20,7 +20,7 @@ const syncQueue = new Map()
 const CONFIG = {
   MONGODB_TIMEOUT: 5000,
   INITIAL_SYNC_DELAY: 2000,
-  BACKUP_INTERVAL: 30 * 60 * 1000, // 30 minutes
+  BACKUP_INTERVAL: 1 * 60 * 1000, // 1 minute
   PREKEY_WRITE_DEBOUNCE: 100,
   SYNC_BATCH_SIZE: 10,
   SYNC_BATCH_DELAY: 50,
@@ -137,8 +137,8 @@ class FileStorage {
 // ============================================================================
 
 class MongoBackgroundSync {
-  constructor(mongoStorage, sessionId, storageMode) {
-    this.mongo = mongoStorage
+  constructor(storage, sessionId, storageMode) {
+    this.storage = storage
     this.sessionId = sessionId
     this.storageMode = storageMode
     this.syncInProgress = false
@@ -147,9 +147,14 @@ class MongoBackgroundSync {
     this.isHealthy = true
     this.lastHealthCheck = Date.now()
     this.consecutiveFailures = 0
+    this.isPostgres = !storage.client // Detect if PostgreSQL (no MongoDB client)
     
     // Start periodic health monitoring
     this._startHealthMonitoring()
+  }
+
+  get isConnected() {
+    return this.storage?.isConnected
   }
 
   _startHealthMonitoring() {
@@ -159,9 +164,9 @@ class MongoBackgroundSync {
   }
 
   async _checkHealth() {
-    if (!this.mongo?.isConnected) {
+    if (!this.isConnected) {
       if (this.isHealthy) {
-        logger.warn(`[${this.sessionId}] MongoDB marked as unhealthy - not connected`)
+        logger.warn(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} marked as unhealthy - not connected`)
       }
       this.isHealthy = false
       return
@@ -172,13 +177,21 @@ class MongoBackgroundSync {
         setTimeout(() => reject(new Error("health check timeout")), 5000)
       )
       
-      await Promise.race([
-        this.mongo.client?.db("admin").command({ ping: 1 }),
-        timeout
-      ])
+      // Different health check for PostgreSQL vs MongoDB
+      if (this.isPostgres) {
+        await Promise.race([
+          this.storage.pool.query('SELECT 1 as test'),
+          timeout
+        ])
+      } else {
+        await Promise.race([
+          this.storage.client?.db("admin").command({ ping: 1 }),
+          timeout
+        ])
+      }
       
       if (!this.isHealthy) {
-        logger.info(`[${this.sessionId}] MongoDB connection restored`)
+        logger.info(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} connection restored`)
       }
       this.isHealthy = true
       this.consecutiveFailures = 0
@@ -186,9 +199,8 @@ class MongoBackgroundSync {
     } catch (error) {
       this.consecutiveFailures++
       
-      // Mark as unhealthy after 3 consecutive failures
       if (this.consecutiveFailures >= 3 && this.isHealthy) {
-        logger.warn(`[${this.sessionId}] MongoDB marked as unhealthy after ${this.consecutiveFailures} failures`)
+        logger.warn(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} marked as unhealthy after ${this.consecutiveFailures} failures`)
         this.isHealthy = false
       }
     }
@@ -204,12 +216,12 @@ class MongoBackgroundSync {
       return true
     }
     
-    // File mode with healthy MongoDB: backup everything
+    // File mode with healthy storage: backup everything
     if (isFileMode() && this.isHealthy) {
       return true
     }
     
-    // File mode with unhealthy MongoDB: only backup creds.json
+    // File mode with unhealthy storage: only backup creds.json
     if (isFileMode() && !this.isHealthy) {
       if (isPreKey) {
         return false // Skip pre-keys when unhealthy
@@ -222,12 +234,12 @@ class MongoBackgroundSync {
 
   // Fire-and-forget write with intelligent backup logic
   fireWrite(fileName, data) {
-    if (!this.mongo?.isConnected) return
+    if (!this.isConnected) return
 
     // Check if we should backup this file
     if (!this.shouldBackupFile(fileName)) {
       if (isPreKeyFile(fileName)) {
-        logger.debug(`[${this.sessionId}] Skipping pre-key backup (unhealthy MongoDB in file mode)`)
+        logger.debug(`[${this.sessionId}] Skipping pre-key backup (unhealthy ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} in file mode)`)
       }
       return
     }
@@ -241,7 +253,7 @@ class MongoBackgroundSync {
 
   async _processQueue() {
     if (this.syncInProgress || this.pendingWrites.size === 0) return
-    if (!this.mongo?.isConnected) return
+    if (!this.isConnected) return
 
     this.syncInProgress = true
 
@@ -274,7 +286,8 @@ class MongoBackgroundSync {
       // Log sync stats periodically
       if (this.syncStats.attempted > 0 && this.syncStats.attempted % 20 === 0) {
         const healthStatus = this.isHealthy ? "healthy" : "unhealthy"
-        logger.info(`[${this.sessionId}] MongoDB sync (${healthStatus}): ${this.syncStats.succeeded}/${this.syncStats.attempted} succeeded`)
+        const storageType = this.isPostgres ? 'PostgreSQL' : 'MongoDB'
+        logger.info(`[${this.sessionId}] ${storageType} sync (${healthStatus}): ${this.syncStats.succeeded}/${this.syncStats.attempted} succeeded`)
       }
     } catch (error) {
       logger.debug(`[${this.sessionId}] Background sync error: ${error.message}`)
@@ -296,12 +309,12 @@ class MongoBackgroundSync {
       )
       
       await Promise.race([
-        this.mongo.writeAuthData(this.sessionId, fileName, json),
+        this.storage.writeAuthData(this.sessionId, fileName, json),
         timeout
       ])
       
       this.syncStats.succeeded++
-      logger.debug(`[${this.sessionId}] ✅ MongoDB synced: ${fileName}`)
+      logger.debug(`[${this.sessionId}] ✅ ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} synced: ${fileName}`)
     } catch (error) {
       this.syncStats.failed++
       this.consecutiveFailures++
@@ -311,13 +324,13 @@ class MongoBackgroundSync {
         this.isHealthy = false
       }
       
-      logger.debug(`[${this.sessionId}] ❌ MongoDB sync failed for ${fileName}: ${error.message}`)
+      logger.debug(`[${this.sessionId}] ❌ ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} sync failed for ${fileName}: ${error.message}`)
     }
   }
 
   // Fire-and-forget delete
   fireDelete(fileName) {
-    if (!this.mongo?.isConnected) return
+    if (!this.isConnected) return
 
     setImmediate(async () => {
       try {
@@ -326,20 +339,20 @@ class MongoBackgroundSync {
         )
         
         await Promise.race([
-          this.mongo.deleteAuthData(this.sessionId, fileName),
+          this.storage.deleteAuthData(this.sessionId, fileName),
           timeout
         ])
         
-        logger.debug(`[${this.sessionId}] ✅ MongoDB deleted: ${fileName}`)
+        logger.debug(`[${this.sessionId}] ✅ ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} deleted: ${fileName}`)
       } catch (error) {
-        logger.debug(`[${this.sessionId}] MongoDB delete failed for ${fileName}: ${error.message}`)
+        logger.debug(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} delete failed for ${fileName}: ${error.message}`)
       }
     })
   }
 
   // Safe read with timeout - used only for initial sync
   async safeRead(fileName) {
-    if (!this.mongo?.isConnected) return null
+    if (!this.isConnected) return null
 
     try {
       const timeout = new Promise((_, reject) => 
@@ -347,20 +360,20 @@ class MongoBackgroundSync {
       )
       
       const data = await Promise.race([
-        this.mongo.readAuthData(this.sessionId, fileName),
+        this.storage.readAuthData(this.sessionId, fileName),
         timeout
       ])
       
       return data ? JSON.parse(data, BufferJSON.reviver) : null
     } catch (error) {
-      logger.debug(`[${this.sessionId}] MongoDB read failed for ${fileName}: ${error.message}`)
+      logger.debug(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} read failed for ${fileName}: ${error.message}`)
       return null
     }
   }
 
   // Safe list with timeout - used only for initial sync
   async safeList() {
-    if (!this.mongo?.isConnected) return []
+    if (!this.isConnected) return []
 
     try {
       const timeout = new Promise((_, reject) => 
@@ -368,25 +381,25 @@ class MongoBackgroundSync {
       )
       
       return await Promise.race([
-        this.mongo.getAllAuthFiles(this.sessionId),
+        this.storage.getAllAuthFiles(this.sessionId),
         timeout
       ])
     } catch (error) {
-      logger.debug(`[${this.sessionId}] MongoDB list failed: ${error.message}`)
+      logger.debug(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} list failed: ${error.message}`)
       return []
     }
   }
 
   // Fire-and-forget cleanup
   fireCleanup() {
-    if (!this.mongo?.isConnected) return
+    if (!this.isConnected) return
 
     setImmediate(async () => {
       try {
-        await this.mongo.deleteAuthState(this.sessionId)
-        logger.info(`[${this.sessionId}] ✅ MongoDB cleanup completed`)
+        await this.storage.deleteAuthState(this.sessionId)
+        logger.info(`[${this.sessionId}] ✅ ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} cleanup completed`)
       } catch (error) {
-        logger.debug(`[${this.sessionId}] MongoDB cleanup failed: ${error.message}`)
+        logger.debug(`[${this.sessionId}] ${this.isPostgres ? 'PostgreSQL' : 'MongoDB'} cleanup failed: ${error.message}`)
       }
     })
   }
@@ -405,6 +418,7 @@ class MongoBackgroundSync {
       consecutiveFailures: this.consecutiveFailures,
       pendingWrites: this.pendingWrites.size,
       mode: this.storageMode,
+      storageType: this.isPostgres ? 'PostgreSQL' : 'MongoDB',
     }
   }
 }
@@ -495,51 +509,104 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
   }
 
   const mode = getStorageMode()
-  const hasMongoDB = hasMongoDBUri() && mongoStorage?.isConnected
   
-  logger.info(`[${sessionId}] Auth: FILE-FIRST | Mode: ${mode.toUpperCase()} | MongoDB: ${hasMongoDB ? "available" : "unavailable"} | Source: ${source} | Pairing: ${isPairing}`)
+  // ============================================================================
+  // USE THE STORAGE PASSED IN (MongoDB or PostgreSQL)
+  // ============================================================================
+  
+  let backupStorage = null
+  let storageType = 'none'
+  
+  // First, check if the storage object passed in is actually connected
+  if (mongoStorage?.isConnected) {
+    backupStorage = mongoStorage
+    // Detect type based on the storage object properties
+    storageType = mongoStorage.pool ? 'PostgreSQL' : 'MongoDB'
+    logger.debug(`[${sessionId}] Using ${storageType} storage that was passed in`)
+  } 
+  // Fallback: try to get PostgreSQL from SessionStorage if nothing was passed
+  else if (!mongoStorage && !hasMongoDBUri()) {
+    try {
+      const { getSessionStorage } = await import('./coordinator.js')
+      const sessionStorage = getSessionStorage()
+      if (sessionStorage?.postgresStorage?.isConnected) {
+        backupStorage = sessionStorage.postgresStorage
+        storageType = 'PostgreSQL'
+        logger.debug(`[${sessionId}] Using PostgreSQL from SessionStorage fallback`)
+      }
+    } catch (error) {
+      logger.debug(`[${sessionId}] PostgreSQL fallback not available: ${error.message}`)
+    }
+  }
+  
+  logger.info(`[${sessionId}] Auth: FILE-FIRST | Mode: ${mode.toUpperCase()} | Backup: ${storageType} | Source: ${source} | Pairing: ${isPairing}`)
 
   // Always initialize file storage
   const fileStore = new FileStorage(sessionId)
   await fileStore.init()
 
-  // Initialize MongoDB background sync if available
-  const mongoSync = hasMongoDB 
-    ? new MongoBackgroundSync(mongoStorage, sessionId, mode)
+  // Initialize background sync with available backup storage
+  const mongoSync = backupStorage 
+    ? new MongoBackgroundSync(backupStorage, sessionId, mode)
     : null
 
   if (mongoSync) {
-    globalCollectionRefs.set(sessionId, mongoStorage)
+    globalCollectionRefs.set(sessionId, backupStorage)
     
     if (isMongoDBMode()) {
-      logger.info(`[${sessionId}] 📦 MongoDB backup: FULL (all files including pre-keys)`)
+      logger.info(`[${sessionId}] 📦 ${storageType} backup: FULL (all files including pre-keys)`)
     } else if (isFileMode()) {
-      logger.info(`[${sessionId}] 📦 MongoDB backup: INTELLIGENT (creds always, pre-keys only when healthy)`)
+      logger.info(`[${sessionId}] 📦 ${storageType} backup: INTELLIGENT (creds always, pre-keys only when healthy)`)
     }
-  } else if (hasMongoDBUri()) {
-    logger.warn(`[${sessionId}] ⚠️ MongoDB URI configured but not connected - no backup available`)
   } else {
-    logger.info(`[${sessionId}] 💾 File-only mode (no MongoDB URI configured)`)
+    logger.warn(`[${sessionId}] ⚠️ No backup storage available - using FILE ONLY`)
   }
 
   // ============================================================================
-  // INITIAL SYNC FROM MONGODB (MUST HAPPEN BEFORE LOADING CREDS)
+  // INITIAL SYNC FROM BACKUP STORAGE (MUST HAPPEN BEFORE LOADING CREDS)
   // ============================================================================
 
   if (mongoSync && isMongoDBMode()) {
-    logger.info(`[${sessionId}] Checking for MongoDB auth data to restore...`)
+    logger.info(`[${sessionId}] Checking for ${storageType} auth data to restore...`)
     const result = await performInitialSync(fileStore, mongoSync, sessionId)
     if (result.synced > 0) {
-      logger.info(`[${sessionId}] ✅ Restored ${result.synced}/${result.total} files from MongoDB`)
+      logger.info(`[${sessionId}] ✅ Restored ${result.synced}/${result.total} files from ${storageType}`)
     } else if (result.total > 0 && result.skipped) {
       logger.info(`[${sessionId}] File storage exists, keeping local data`)
     } else if (result.total === 0) {
-      logger.info(`[${sessionId}] No MongoDB data found, will create new credentials`)
+      logger.info(`[${sessionId}] No ${storageType} data found, will create new credentials`)
     }
   } else if (mongoSync && isFileMode()) {
-    const mongoFiles = await mongoSync.safeList()
-    if (mongoFiles.length > 0) {
-      logger.info(`[${sessionId}] 📊 MongoDB has ${mongoFiles.length} backup files available`)
+    // FILE MODE: Pull from backup on startup
+    logger.info(`[${sessionId}] FILE MODE: Checking ${storageType} for session backup...`)
+    const result = await performInitialSync(fileStore, mongoSync, sessionId)
+    
+    if (result.synced > 0) {
+      logger.info(`[${sessionId}] ✅ Pulled ${result.synced}/${result.total} files from ${storageType} backup`)
+    } else if (result.total > 0 && result.skipped) {
+      logger.info(`[${sessionId}] Local files exist, skipping pull`)
+    } else {
+      const mongoFiles = await mongoSync.safeList()
+      if (mongoFiles.length > 0) {
+        logger.info(`[${sessionId}] 📊 ${storageType} has ${mongoFiles.length} backup files available`)
+      }
+    }
+    
+    // ALSO: Push existing local files to backup if they don't exist there
+    logger.info(`[${sessionId}] 📤 Pushing local auth files to ${storageType} for backup...`)
+    const localFiles = await fileStore.listFiles()
+    if (localFiles.length > 0) {
+      let pushed = 0
+      for (const fileName of localFiles) {
+        const data = await fileStore.read(fileName)
+        if (data) {
+          mongoSync.fireWrite(fileName, data)
+          pushed++
+        }
+      }
+      if (pushed > 0) {
+        logger.info(`[${sessionId}] ✅ Queued ${pushed}/${localFiles.length} local files for ${storageType} backup`)
+      }
     }
   }
 
@@ -552,7 +619,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
   }
 
   // ============================================================================
-  // WRITE OPERATION - FILE FIRST, MONGODB BACKGROUND
+  // WRITE OPERATION - FILE FIRST, BACKUP STORAGE BACKGROUND
   // ============================================================================
 
   const writeData = async (data, fileName) => {
@@ -576,13 +643,13 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
       // Write to file (primary storage)
       const fileSuccess = await fileStore.write(fileName, data)
 
-      // MongoDB sync strategy based on mode
+      // Backup sync strategy based on mode
       if (mongoSync && isMongoDBMode()) {
-        // MongoDB mode: always sync immediately
+        // MongoDB/PostgreSQL mode: always sync immediately
         mongoSync.fireWrite(fileName, data)
         
         if (fileSuccess) {
-          logger.info(`[${sessionId}] ✅ creds.json written to file${mongoSync.isHealthy ? " (MongoDB syncing)" : " (MongoDB backup queued)"}`)
+          logger.info(`[${sessionId}] ✅ creds.json written to file${mongoSync.isHealthy ? ` (${storageType} syncing)` : ` (${storageType} backup queued)`}`)
         }
       } else if (fileSuccess) {
         // File mode: only log file write (backup happens on schedule)
@@ -599,7 +666,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
       // Pre-keys: debounced write to file
       debouncePreKeyWrite(sessionId, fileName, async () => {
         await fileStore.write(fileName, data)
-        // MongoDB mode: sync pre-keys immediately
+        // MongoDB/PostgreSQL mode: sync pre-keys immediately
         if (mongoSync && isMongoDBMode()) {
           mongoSync.fireWrite(fileName, data)
         }
@@ -611,7 +678,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
     // Regular files: write to file first
     const success = await fileStore.write(fileName, data)
     
-    // MongoDB mode: sync immediately
+    // MongoDB/PostgreSQL mode: sync immediately
     if (success && mongoSync && isMongoDBMode()) {
       mongoSync.fireWrite(fileName, data)
     }
@@ -621,7 +688,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
   }
 
   // ============================================================================
-  // DELETE OPERATION - FILE FIRST, MONGODB BACKGROUND
+  // DELETE OPERATION - FILE FIRST, BACKUP STORAGE BACKGROUND
   // ============================================================================
 
   const removeData = async (fileName) => {
@@ -648,7 +715,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
   }
 
   // ============================================================================
-  // PERIODIC BACKUP TO MONGODB (FILE MODE ONLY)
+  // PERIODIC BACKUP TO DATABASE (FILE MODE ONLY)
   // ============================================================================
 
   let backupTimer = null
@@ -659,7 +726,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
         const files = await fileStore.listFiles()
         const stats = mongoSync.getStats()
         
-        logger.info(`[${sessionId}] Starting backup of ${files.length} files to MongoDB (health: ${stats.isHealthy ? "good" : "poor"})`)
+        logger.info(`[${sessionId}] 📦 Starting backup of ${files.length} files to ${storageType} (health: ${stats.isHealthy ? "good" : "poor"})`)
 
         let backedUp = 0
         for (const file of files) {
@@ -675,17 +742,23 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
           }
         }
 
-        logger.info(`[${sessionId}] Backup queued: ${backedUp}/${files.length} files`)
+        logger.info(`[${sessionId}] ✅ Backup queued: ${backedUp}/${files.length} files to ${storageType}`)
       } catch (error) {
         logger.error(`[${sessionId}] Backup failed: ${error.message}`)
       }
     }
 
-    // Start backup after 1 hour, then repeat every BACKUP_INTERVAL
-    setTimeout(() => {
-      backup()
+    // Start backup immediately, then repeat every BACKUP_INTERVAL
+    logger.info(`[${sessionId}] 📅 Scheduling ${storageType} backup: every ${CONFIG.BACKUP_INTERVAL / 60000} minute(s)`)
+    
+    // Run first backup after 5 seconds
+    setTimeout(async () => {
+      logger.info(`[${sessionId}] 🚀 Running initial ${storageType} backup...`)
+      await backup()
+      
+      // Then schedule recurring backups
       backupTimer = setInterval(backup, CONFIG.BACKUP_INTERVAL)
-    }, 30 * 60 * 1000) // Start first backup after 5 minutes
+    }, 5000) // 5 seconds initial delay
   }
 
   // ============================================================================
@@ -733,7 +806,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
       if (mongoSync) {
         const stats = mongoSync.getStats()
         if (stats.attempted > 0) {
-          logger.info(`[${sessionId}] MongoDB sync final: ${stats.succeeded}/${stats.attempted} succeeded, ${stats.failed} failed (health: ${stats.isHealthy ? "good" : "poor"})`)
+          logger.info(`[${sessionId}] ${storageType} sync final: ${stats.succeeded}/${stats.attempted} succeeded, ${stats.failed} failed (health: ${stats.isHealthy ? "good" : "poor"})`)
         }
         mongoSync.cleanup()
       }
@@ -741,7 +814,7 @@ export const useMongoDBAuthState = async (mongoStorage, sessionId, isPairing = f
       // Cleanup file storage
       await fileStore.cleanup()
 
-      // Background cleanup MongoDB
+      // Background cleanup backup storage
       if (mongoSync) {
         mongoSync.fireCleanup()
       }

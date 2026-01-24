@@ -367,6 +367,44 @@ export class FileManager {
     }
   }
 
+  async saveSessionWithPostgresBackup(sessionId, sessionData) {
+    // Save to file first
+    const metadata = {
+      sessionId,
+      telegramId: sessionData.telegramId || sessionData.userId,
+      userId: sessionData.userId || sessionData.telegramId,
+      phoneNumber: sessionData.phoneNumber,
+      isConnected: sessionData.isConnected !== undefined ? sessionData.isConnected : false,
+      connectionStatus: sessionData.connectionStatus || "disconnected",
+      reconnectAttempts: sessionData.reconnectAttempts || 0,
+      source: sessionData.source || "telegram",
+      detected: sessionData.detected !== false,
+      detectedAt: sessionData.detectedAt,
+      createdAt: sessionData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fileSaved = await this.saveSession(sessionId, metadata)
+
+    // Background backup to PostgreSQL if available
+    if (fileSaved) {
+      setImmediate(async () => {
+        try {
+          const { getSessionStorage } = await import('./session-coordinator.js')
+          const storage = getSessionStorage()
+          
+          if (storage?.postgresStorage?.isConnected) {
+            await storage.postgresStorage.saveSessionMetadata(sessionId, metadata)
+          }
+        } catch (error) {
+          // Silent failure - file is primary storage
+        }
+      })
+    }
+
+    return fileSaved
+  }
+
   /**
    * Get storage stats
    */

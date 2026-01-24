@@ -70,8 +70,12 @@ export class ConnectionManager {
     return this.storage?.mongoStorage || null
   }
 
-  get isMongoAvailable() {
-    return !!(this.storage?.isMongoConnected && this.storage?.mongoStorage)
+  get postgresStorage() {
+    return this.storage?.postgresStorage || null
+  }
+
+  get isPostgresAvailable() {
+    return !!(this.storage?.isPostgresConnected && this.storage?.postgresStorage)
   }
 
   // ==================== CREATE CONNECTION ====================
@@ -172,52 +176,64 @@ _createGetMessage(store) {
     try {
       logger.info(`[${sessionId}] Getting auth state (pairing: ${allowPairing})`)
 
-      // Try MongoDB first if available
+      // Determine which storage to pass (MongoDB preferred, then PostgreSQL)
+      let backupStorage = null
+      let storageName = "file-only"
+      
       if (this.isMongoAvailable && this.mongoStorage) {
+        backupStorage = this.mongoStorage
+        storageName = "MongoDB"
+      } else if (this.isPostgresAvailable && this.postgresStorage) {
+        backupStorage = this.postgresStorage
+        storageName = "PostgreSQL"
+      }
+
+      // Use unified auth state handler (works with MongoDB or PostgreSQL)
+      if (backupStorage) {
         try {
           const { useMongoDBAuthState } = await import("../storage/index.js")
 
-          logger.info(`[${sessionId}] Attempting MongoDB auth`)
+          logger.info(`[${sessionId}] Attempting ${storageName} auth`)
 
-          const mongoAuth = await useMongoDBAuthState(
-            this.mongoStorage,
+          const backupAuth = await useMongoDBAuthState(
+            backupStorage,
             sessionId,
             allowPairing,
             "telegram"
           )
 
-          if (mongoAuth?.state?.creds) {
-            const hasCreds = mongoAuth.state.creds.noiseKey && mongoAuth.state.creds.signedIdentityKey
+          if (backupAuth?.state?.creds) {
+            const hasCreds = backupAuth.state.creds.noiseKey && backupAuth.state.creds.signedIdentityKey
 
             if (hasCreds || allowPairing) {
-              logger.info(`[${sessionId}] ✅ Using MongoDB auth`)
+              logger.info(`[${sessionId}] ✅ Using ${storageName} auth with file backup`)
 
               const authState = {
-                creds: mongoAuth.state.creds,
-                keys: makeCacheableSignalKeyStore(mongoAuth.state.keys, pino({ level: "silent" })),
+                creds: backupAuth.state.creds,
+                keys: makeCacheableSignalKeyStore(backupAuth.state.keys, pino({ level: "silent" })),
               }
 
               return {
                 state: authState,
-                saveCreds: mongoAuth.saveCreds,
-                cleanup: mongoAuth.cleanup,
-                method: "mongodb",
+                saveCreds: backupAuth.saveCreds,
+                cleanup: backupAuth.cleanup,
+                method: storageName.toLowerCase(),
               }
             }
           }
 
-          logger.warn(`[${sessionId}] MongoDB auth invalid`)
-        } catch (mongoError) {
-          logger.error(`[${sessionId}] MongoDB auth error: ${mongoError.message}`)
+          logger.warn(`[${sessionId}] ${storageName} auth invalid`)
+        } catch (backupError) {
+          logger.error(`[${sessionId}] ${storageName} auth error: ${backupError.message}`)
         }
       }
 
-      // Fallback to file auth
+      // Fallback to file-only auth
       if (!this.fileManager) {
         throw new Error("No auth provider available")
       }
 
-      logger.info(`[${sessionId}] Using file auth`)
+      logger.info(`[${sessionId}] Using file-only auth (no backup storage available)`)
 
       await this.fileManager.ensureSessionDirectory(sessionId)
       const sessionPath = this.fileManager.getSessionPath(sessionId)

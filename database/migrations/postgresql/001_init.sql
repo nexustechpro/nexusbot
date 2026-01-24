@@ -7,6 +7,18 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
+-- CREATE UPDATE TRIGGERS FUNCTION (FIRST - used by multiple triggers)
+-- ============================================
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
 -- USERS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS users (
@@ -31,6 +43,21 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS web_users_auth (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Session metadata storage (separate from auth_state files)
+CREATE TABLE IF NOT EXISTS session_metadata (
+    session_id VARCHAR(255) PRIMARY KEY,
+    telegram_id BIGINT,
+    user_id BIGINT,
+    phone_number VARCHAR(50),
+    is_connected BOOLEAN DEFAULT FALSE,
+    connection_status VARCHAR(50) DEFAULT 'disconnected',
+    reconnect_attempts INTEGER DEFAULT 0,
+    source VARCHAR(50) DEFAULT 'telegram',
+    detected BOOLEAN DEFAULT TRUE,
+    detected_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -227,6 +254,21 @@ CREATE TABLE IF NOT EXISTS violations (
 );
 
 -- ============================================
+-- AUTH STATE STORAGE IN POSTGRESQL
+-- ============================================
+
+-- Auth state storage table
+CREATE TABLE IF NOT EXISTS auth_state (
+    id BIGSERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_data TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, file_name)
+);
+
+-- ============================================
 -- SPAM TRACKING TABLE (NEW)
 -- ============================================
 CREATE TABLE IF NOT EXISTS spam_tracking (
@@ -324,6 +366,13 @@ CREATE INDEX IF NOT EXISTS idx_owned_user_active ON vip_owned_users(owned_telegr
 CREATE INDEX IF NOT EXISTS idx_activity_vip ON vip_activity_log(vip_telegram_id);
 CREATE INDEX IF NOT EXISTS idx_activity_date ON vip_activity_log(created_at DESC);
 
+-- Indexes for fast lookups on auth state
+CREATE INDEX IF NOT EXISTS idx_auth_state_session ON auth_state(session_id);
+CREATE INDEX IF NOT EXISTS idx_auth_state_session_file ON auth_state(session_id, file_name);
+
+CREATE INDEX IF NOT EXISTS idx_session_metadata_session ON session_metadata(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_metadata_telegram ON session_metadata(telegram_id);
+
 -- Groups indexes
 CREATE INDEX IF NOT EXISTS idx_groups_jid ON groups(jid);
 CREATE INDEX IF NOT EXISTS idx_groups_telegram_scheduler ON groups(telegram_id, scheduled_close_time, scheduled_open_time) WHERE auto_schedule_enabled = true;
@@ -340,6 +389,17 @@ CREATE INDEX IF NOT EXISTS idx_group_activity_jid
 -- Index for JSON queries (optional, for advanced queries)
 CREATE INDEX IF NOT EXISTS idx_group_activity_data 
     ON group_activity USING gin(activity_data);
+
+    -- Update trigger on auth state
+DROP TRIGGER IF EXISTS update_auth_state_updated_at ON auth_state;
+CREATE TRIGGER update_auth_state_updated_at 
+    BEFORE UPDATE ON auth_state 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+COMMENT ON TABLE auth_state IS 'WhatsApp auth state files stored in PostgreSQL as fallback to MongoDB';
+COMMENT ON COLUMN auth_state.file_data IS 'JSON string of auth file content';
+
 
 
 -- Messages indexes
@@ -370,15 +430,6 @@ CREATE INDEX IF NOT EXISTS idx_analytics_group_date ON group_analytics(group_jid
 -- ============================================
 -- CREATE UPDATE TRIGGERS
 -- ============================================
-
--- Generic update timestamp function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
 -- Apply update triggers to tables
 DROP TRIGGER IF EXISTS update_users_updated_at ON users;
@@ -570,6 +621,8 @@ BEGIN
     RAISE NOTICE 'Spam tracking auto-cleanup: ENABLED (2 hours)';
     RAISE NOTICE 'Group scheduling: ENABLED';
     RAISE NOTICE 'Anti-spam protection: READY';
+    RAISE NOTICE 'Auth state storage table created successfully';
+    RAISE NOTICE 'Ready to store WhatsApp sessions in PostgreSQL';
     RAISE NOTICE '';
     RAISE NOTICE 'Ready for production!';
     RAISE NOTICE '';

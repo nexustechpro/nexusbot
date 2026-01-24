@@ -31,19 +31,42 @@ export default {
   usage: ".sessions",
   cooldown: 5,
 
-  async execute(sock, m) {
+  async execute(sock, m, { args } = {}) {
     try {
+      // Handle case where m is just a session ID string
+      let userSessionId = null
+      let chatDestination = null
+      
+      if (typeof m === 'string' && m.startsWith('session_')) {
+        // m is the session ID string
+        userSessionId = m
+        chatDestination = `${m.replace('session_', '')}@s.whatsapp.net`
+      } else if (m && typeof m === 'object' && m.sender && m.chat) {
+        // m is a proper message object
+        userSessionId = `session_${m.sender.split("@")[0]}`
+        chatDestination = m.chat
+      } else {
+        logger.error("Invalid message format:", { type: typeof m, value: m })
+        return
+      }
+
       const sessionManager = getSessionManager()
       if (!sessionManager) {
         logger.error("Session manager not initialized")
-        return sock.sendMessage(m.chat, {
-          text: `❌ System error: Session manager not ready\n\n` +
-          `> © 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙`
-        })
+        if (chatDestination) {
+          await sock.sendMessage(chatDestination, {
+            text: `❌ System error: Session manager not ready\n\n` +
+            `> © 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙`
+          })
+        }
+        return
       }
 
-      const isOwner = isMainOwner(m.sender)
-      const userSessionId = `session_${m.sender.split("@")[0]}`
+      // Extract phone from session ID
+      const phoneFromSession = userSessionId.replace('session_', '')
+      const mainOwnerPhone = normalizePhoneNumber(process.env.WHATSAPP_PHONE_NUMBER)
+      const isOwner = phoneFromSession === mainOwnerPhone
+
       const userSession = sessionManager.activeSockets.get(userSessionId)
 
       // OWNER VIEW: Show all sessions
@@ -63,9 +86,8 @@ export default {
             const isConnected = session?.user ? "✅" : "⏳"
             const phoneNumber = session?.user?.phoneNumber || "Initializing"
             const platform = session?.user?.platform || "Unknown"
-            const ownerSessionPhone = normalizePhoneNumber(process.env.WHATSAPP_PHONE_NUMBER)
             const thisSessionPhone = normalizePhoneNumber(sessionId.replace("session_", ""))
-            const role = thisSessionPhone === ownerSessionPhone ? "👑 Owner" : "👤 User"
+            const role = thisSessionPhone === mainOwnerPhone ? "👑 Owner" : "👤 User"
             
             message += `${count}. ${isConnected} *${role}*\n`
             message += `   📝 ID: ${sessionId}\n`
@@ -75,17 +97,17 @@ export default {
           }
           
           message += `📝 *Owner Commands:*\n`
-          message += `  .disconnect <session_id> - Disconnect any session\n`
+          message += `  .disconnect confirm <session_id> - Disconnect any session\n`
           message += `  .pair <phone> - Add new account\n\n`
         }
         
         message += `> © 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙`
-        return sock.sendMessage(m.chat, { text: message })
+        return sock.sendMessage(chatDestination, { text: message })
       }
 
       // SUB-USER VIEW: Show only their own session
       if (!userSession) {
-        return sock.sendMessage(m.chat, {
+        return sock.sendMessage(chatDestination, {
           text: `❌ *No Active Session*\n\n` +
           `You don't have an active session with the bot.\n\n` +
           `Use .pair <phone_number> to connect your account\n\n` +
@@ -109,7 +131,7 @@ export default {
       if (isConnected) {
         message += `🎉 Your account is fully connected and ready to use!\n\n`
         message += `📝 *Available Commands:*\n`
-        message += `  .disconnect - Disconnect your session\n`
+        message += `  .disconnect confirm - Disconnect your session\n`
         message += `  .pair - Reconnect or update session\n\n`
       } else {
         message += `⏳ Session is still initializing...\n`
@@ -118,14 +140,9 @@ export default {
 
       message += `> © 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙`
 
-      return sock.sendMessage(m.chat, { text: message })
+      return sock.sendMessage(chatDestination, { text: message })
     } catch (error) {
       logger.error("Sessions plugin error:", error)
-      sock.sendMessage(m.chat, {
-        text: `❌ An error occurred!\n\n` +
-        `Error: ${error.message}\n\n` +
-        `> © 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙`
-      })
     }
   },
 }

@@ -85,6 +85,12 @@ export class SessionManager {
   async _initializeStorage() {
     const { SessionStorage } = await import("../storage/index.js")
     this.storage = new SessionStorage()
+    
+    // Ensure all storages (PostgreSQL, MongoDB, etc.) are initialized
+    if (this.storage.init) {
+      await this.storage.init()
+    }
+    
     logger.info("Storage initialized")
   }
 

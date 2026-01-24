@@ -71,6 +71,18 @@ export class SessionStorage {
     return this.postgresStorage.pool
   }
 
+  /**
+   * Ensure all storages are initialized
+   */
+  async init() {
+    if (this.postgresStorage?.init) {
+      await this.postgresStorage.init()
+    }
+    if (this.mongoStorage?.init) {
+      await this.mongoStorage.init()
+    }
+  }
+
   // ==================== SAVE SESSION ====================
 async saveSession(sessionId, sessionData, credentials = null) {
   if (this.sessionCache.size < CONFIG.CACHE_MAX_SIZE) {

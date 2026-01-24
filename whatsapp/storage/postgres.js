@@ -13,7 +13,7 @@ export class PostgreSQLStorage {
   constructor() {
     this.pool = null
     this.isConnected = false
-    this._initConnection()
+    this.initPromise = this._initConnection()
   }
 
   /**
@@ -35,6 +35,240 @@ export class PostgreSQLStorage {
     } catch (error) {
       this.isConnected = false
       logger.error('PostgreSQL connection failed:', error.message)
+    }
+  }
+
+  /**
+   * Ensure initialization is complete
+   */
+  async init() {
+    if (this.initPromise) {
+      await this.initPromise
+    }
+  }
+  /**
+   * Auth State Operations - NEW
+   */
+  
+  async writeAuthData(sessionId, fileName, jsonData) {
+    if (!this.isConnected) return false
+
+    try {
+      await this.pool.query(`
+        INSERT INTO auth_state (session_id, file_name, file_data, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (session_id, file_name)
+        DO UPDATE SET
+          file_data = EXCLUDED.file_data,
+          updated_at = NOW()
+      `, [sessionId, fileName, jsonData])
+
+      return true
+    } catch (error) {
+      logger.error(`PostgreSQL writeAuthData error for ${sessionId}/${fileName}:`, error.message)
+      return false
+    }
+  }
+
+  async readAuthData(sessionId, fileName) {
+    if (!this.isConnected) return null
+
+    try {
+      const result = await this.pool.query(
+        'SELECT file_data FROM auth_state WHERE session_id = $1 AND file_name = $2',
+        [sessionId, fileName]
+      )
+
+      return result.rows.length > 0 ? result.rows[0].file_data : null
+    } catch (error) {
+      logger.error(`PostgreSQL readAuthData error for ${sessionId}/${fileName}:`, error.message)
+      return null
+    }
+  }
+
+  async deleteAuthData(sessionId, fileName) {
+    if (!this.isConnected) return false
+
+    try {
+      await this.pool.query(
+        'DELETE FROM auth_state WHERE session_id = $1 AND file_name = $2',
+        [sessionId, fileName]
+      )
+      return true
+    } catch (error) {
+      logger.error(`PostgreSQL deleteAuthData error for ${sessionId}/${fileName}:`, error.message)
+      return false
+    }
+  }
+
+  async getAllAuthFiles(sessionId) {
+    if (!this.isConnected) return []
+
+    try {
+      const result = await this.pool.query(
+        'SELECT file_name FROM auth_state WHERE session_id = $1 ORDER BY file_name',
+        [sessionId]
+      )
+
+      return result.rows.map(row => row.file_name)
+    } catch (error) {
+      logger.error(`PostgreSQL getAllAuthFiles error for ${sessionId}:`, error.message)
+      return []
+    }
+  }
+
+  async deleteAuthState(sessionId) {
+    if (!this.isConnected) return false
+
+    try {
+      await this.pool.query(
+        'DELETE FROM auth_state WHERE session_id = $1',
+        [sessionId]
+      )
+      return true
+    } catch (error) {
+      logger.error(`PostgreSQL deleteAuthState error for ${sessionId}:`, error.message)
+      return false
+    }
+  }
+
+  async hasValidAuthData(sessionId) {
+    if (!this.isConnected) return false
+
+    try {
+      const result = await this.pool.query(
+        'SELECT file_data FROM auth_state WHERE session_id = $1 AND file_name = $2',
+        [sessionId, 'creds.json']
+      )
+
+      if (result.rows.length === 0) return false
+
+      const data = JSON.parse(result.rows[0].file_data)
+      return !!(data?.noiseKey && data?.signedIdentityKey)
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
+   * Session Metadata Operations - NEW
+   */
+  
+  async saveSessionMetadata(sessionId, metadata) {
+    if (!this.isConnected) return false
+
+    try {
+      await this.pool.query(`
+        INSERT INTO session_metadata (
+          session_id, telegram_id, user_id, phone_number,
+          is_connected, connection_status, reconnect_attempts,
+          source, detected, detected_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+        ON CONFLICT (session_id)
+        DO UPDATE SET
+          telegram_id = EXCLUDED.telegram_id,
+          user_id = EXCLUDED.user_id,
+          phone_number = EXCLUDED.phone_number,
+          is_connected = EXCLUDED.is_connected,
+          connection_status = EXCLUDED.connection_status,
+          reconnect_attempts = EXCLUDED.reconnect_attempts,
+          source = EXCLUDED.source,
+          detected = EXCLUDED.detected,
+          detected_at = EXCLUDED.detected_at,
+          updated_at = NOW()
+      `, [
+        sessionId,
+        metadata.telegramId || metadata.userId,
+        metadata.userId || metadata.telegramId,
+        metadata.phoneNumber,
+        Boolean(metadata.isConnected),
+        metadata.connectionStatus || 'disconnected',
+        parseInt(metadata.reconnectAttempts || 0),
+        metadata.source || 'telegram',
+        Boolean(metadata.detected !== false),
+        metadata.detectedAt || null
+      ])
+
+      return true
+    } catch (error) {
+      logger.error(`PostgreSQL saveSessionMetadata error for ${sessionId}:`, error.message)
+      return false
+    }
+  }
+
+  async getSessionMetadata(sessionId) {
+    if (!this.isConnected) return null
+
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM session_metadata WHERE session_id = $1',
+        [sessionId]
+      )
+
+      if (result.rows.length === 0) return null
+
+      const row = result.rows[0]
+      return {
+        sessionId: row.session_id,
+        telegramId: row.telegram_id,
+        userId: row.user_id,
+        phoneNumber: row.phone_number,
+        isConnected: row.is_connected,
+        connectionStatus: row.connection_status,
+        reconnectAttempts: row.reconnect_attempts,
+        source: row.source,
+        detected: row.detected,
+        detectedAt: row.detected_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }
+    } catch (error) {
+      logger.error(`PostgreSQL getSessionMetadata error for ${sessionId}:`, error.message)
+      return null
+    }
+  }
+
+  async deleteSessionMetadata(sessionId) {
+    if (!this.isConnected) return false
+
+    try {
+      await this.pool.query(
+        'DELETE FROM session_metadata WHERE session_id = $1',
+        [sessionId]
+      )
+      return true
+    } catch (error) {
+      logger.error(`PostgreSQL deleteSessionMetadata error for ${sessionId}:`, error.message)
+      return false
+    }
+  }
+
+  async getAllSessionMetadata() {
+    if (!this.isConnected) return []
+
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM session_metadata ORDER BY updated_at DESC'
+      )
+
+      return result.rows.map(row => ({
+        sessionId: row.session_id,
+        telegramId: row.telegram_id,
+        userId: row.user_id,
+        phoneNumber: row.phone_number,
+        isConnected: row.is_connected,
+        connectionStatus: row.connection_status,
+        reconnectAttempts: row.reconnect_attempts,
+        source: row.source,
+        detected: row.detected,
+        detectedAt: row.detected_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }))
+    } catch (error) {
+      logger.error('PostgreSQL getAllSessionMetadata error:', error.message)
+      return []
     }
   }
 

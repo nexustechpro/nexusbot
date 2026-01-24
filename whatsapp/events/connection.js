@@ -504,11 +504,12 @@ export class ConnectionEventHandler {
 
     logger.info(`Reconnection attempt ${newAttempts} for ${sessionId}`)
 
-
+    const stateInfo = this.sessionManager.sessionState.get(sessionId)
+    const callbacks = stateInfo?.callbacks || session.callbacks || {}
     const sock = await this.sessionManager.createSession(
       session.userId,
       session.phoneNumber,
-     session.callbacks || {},
+      callbacks,
       true,
       session.source || "telegram",
       false,
