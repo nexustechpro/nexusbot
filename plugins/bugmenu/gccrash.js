@@ -216,8 +216,8 @@ export default {
       })
 
       const bugs = [
-          { name: 'BugGcCrash', fn: () => buggccrash(sock, groupId), count: 5 },
-        { name: 'BugGcNewup', fn: () => buggcnewup(sock, groupId), count: 5 },
+         // { name: 'BugGcCrash', fn: () => buggccrash(sock, groupId), count: 5 },
+        { name: 'BugGcNewup', fn: () => buggcnewup(sock, groupId), count: 30 },
         
       ]
 
